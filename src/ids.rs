@@ -84,7 +84,6 @@ macro_rules! design_id {
 }
 
 design_id!(
-    ElabUnitId,
     InstanceId,
     SignalId,
     ProcessId,
@@ -92,10 +91,6 @@ design_id!(
     SensitivityId,
     ConnectionId,
     DisconnectId,
-    QuantityId,
-    TerminalId,
-    SimultaneousId,
-    ComplexSimultaneousId,
     TypeId,
     ValueId,
     MemoryId,

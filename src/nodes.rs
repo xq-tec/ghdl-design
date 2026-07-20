@@ -17,24 +17,20 @@ use std::fmt;
 
 use ghdl_ast::ConstantDeclaration;
 use ghdl_ast::Direction;
-use ghdl_ast::LibraryUnitNodeId;
 use ghdl_ast::NodeId;
-use ghdl_ast::SimpleSimultaneousStatement;
-use ghdl_ast::TerminalDeclaration;
 use ghdl_ast::TypeAndSubtypeDefinitionNodeId;
 use ghdl_ast::deserialize_f64;
 use ghdl_ast::deserialize_optional_node_id;
 use serde::Deserialize;
+use serde::Deserializer;
+use serde::de::Error as _;
 
-use crate::ComplexSimultaneousId;
-use crate::ComplexSimultaneousStmtNodeId;
 use crate::ConnectionAssociationNodeId;
 use crate::ConnectionId;
 use crate::Design;
 use crate::DesignSlotDeclarationNodeId;
 use crate::DisconnectId;
 use crate::DriverId;
-use crate::ElabUnitId;
 use crate::InstanceBlockRefNodeId;
 use crate::InstanceConfigurationNodeId;
 use crate::InstanceId;
@@ -44,14 +40,10 @@ use crate::MemoryId;
 use crate::NbrSourcesId;
 use crate::ProcessId;
 use crate::ProcessStmtNodeId;
-use crate::QuantityDeclNodeId;
-use crate::QuantityId;
 use crate::RecordFieldDeclNodeId;
 use crate::SensitivityId;
 use crate::SignalDeclNodeId;
 use crate::SignalId;
-use crate::SimultaneousId;
-use crate::TerminalId;
 use crate::TypeId;
 use crate::UninstantiatedScopeRefNodeId;
 use crate::ValueId;
@@ -59,13 +51,10 @@ use crate::deserialize_optional_id;
 
 /// Top-level tagged design node as emitted on one JSONL line.
 ///
-/// Each variant corresponds to a GHDL table entry or interned object. Emission
-/// order is structural → simulation connectivity → AMS → interned data (see
-/// `Dump_Design` in `design_export.adb`).
+/// Each variant corresponds to a GHDL table entry or interned object.
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Node {
-    ElabUnit(ElabUnit),
     Instance(Instance),
     ObjectSlot(ObjectSlot),
     Signal(Signal),
@@ -74,10 +63,6 @@ pub enum Node {
     Sensitivity(Sensitivity),
     Connection(Connection),
     Disconnect(Disconnect),
-    Quantity(Quantity),
-    Terminal(Terminal),
-    Simultaneous(Simultaneous),
-    ComplexSimultaneous(ComplexSimultaneous),
     #[serde(rename = "type")]
     Type(TypeNode),
     Value(Value),
@@ -90,7 +75,6 @@ impl Node {
     #[must_use]
     pub fn type_str(&self) -> &'static str {
         match self {
-            Self::ElabUnit(..) => "elab_unit",
             Self::Instance(..) => "instance",
             Self::ObjectSlot(..) => "object_slot",
             Self::Signal(..) => "signal",
@@ -99,10 +83,6 @@ impl Node {
             Self::Sensitivity(..) => "sensitivity",
             Self::Connection(..) => "connection",
             Self::Disconnect(..) => "disconnect",
-            Self::Quantity(..) => "quantity",
-            Self::Terminal(..) => "terminal",
-            Self::Simultaneous(..) => "simultaneous",
-            Self::ComplexSimultaneous(..) => "complex_simultaneous",
             Self::Type(..) => "type",
             Self::Value(..) => "value",
             Self::Memory(..) => "memory",
@@ -114,7 +94,6 @@ impl Node {
 impl fmt::Debug for Node {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ElabUnit(inner) => fmt::Debug::fmt(inner, formatter),
             Self::Instance(inner) => fmt::Debug::fmt(inner, formatter),
             Self::ObjectSlot(inner) => fmt::Debug::fmt(inner, formatter),
             Self::Signal(inner) => fmt::Debug::fmt(inner, formatter),
@@ -123,10 +102,6 @@ impl fmt::Debug for Node {
             Self::Sensitivity(inner) => fmt::Debug::fmt(inner, formatter),
             Self::Connection(inner) => fmt::Debug::fmt(inner, formatter),
             Self::Disconnect(inner) => fmt::Debug::fmt(inner, formatter),
-            Self::Quantity(inner) => fmt::Debug::fmt(inner, formatter),
-            Self::Terminal(inner) => fmt::Debug::fmt(inner, formatter),
-            Self::Simultaneous(inner) => fmt::Debug::fmt(inner, formatter),
-            Self::ComplexSimultaneous(inner) => fmt::Debug::fmt(inner, formatter),
             Self::Type(inner) => fmt::Debug::fmt(inner, formatter),
             Self::Value(inner) => fmt::Debug::fmt(inner, formatter),
             Self::Memory(inner) => fmt::Debug::fmt(inner, formatter),
@@ -142,39 +117,12 @@ pub trait IdIndex {
     fn id_index(&self) -> usize;
 }
 
-/// Library unit that was elaborated as part of building the design hierarchy.
-///
-/// Corresponds to an entry in GHDL's `Elab.Vhdl_Insts.Elab_Units` list. Typical
-/// units are packages elaborated for use by the top-level architecture, and the
-/// entity/architecture of the simulation root itself.
-///
-/// ```vhdl
-/// -- Elaborating `work.tb(arch)` also elaborates packages it depends on;
-/// -- each such unit appears as an `elab_unit` before instance nodes.
-/// library ieee;
-/// use ieee.std_logic_1164.all;  -- package → elab_unit
-/// ```
-#[derive(Debug, Deserialize)]
-pub struct ElabUnit {
-    /// 1-based index into the elaboration-units table.
-    pub id: ElabUnitId,
-
-    /// Library unit elaborated into this entry.
-    pub unit: LibraryUnitNodeId,
-}
-
-impl IdIndex for ElabUnit {
-    fn id_index(&self) -> usize {
-        self.id.index()
-    }
-}
-
 /// Elaborated scope in the design hierarchy (`Synth_Instance_Type`).
 ///
 /// Parallel to a simulation block instance: each architecture, block, generate
 /// iteration, process, subprogram activation, package instance, or foreign
-/// module gets one entry with a fixed object-slot array sized at annotation
-/// time (`Max_Objs`).
+/// module gets one entry. Occupied object slots are exported separately as
+/// [`ObjectSlot`] entries.
 ///
 /// # `stmt` vs `source` vs `block`
 ///
@@ -199,7 +147,6 @@ impl IdIndex for ElabUnit {
 ///   u: entity work.child port map (...); -- stmt=u, source=child's architecture
 /// end;
 /// ```
-#[expect(clippy::struct_excessive_bools, reason = "false positive")]
 #[derive(Debug, Deserialize)]
 pub struct Instance {
     /// Unique instance index (`Instance_Id_Type`, starts at 1).
@@ -234,10 +181,6 @@ pub struct Instance {
     #[serde(default, deserialize_with = "deserialize_optional_node_id")]
     pub config: Option<InstanceConfigurationNodeId>,
 
-    /// Caller instance for a subprogram activation (debug only).
-    #[serde(default, deserialize_with = "deserialize_optional_id")]
-    pub caller: Option<InstanceId>,
-
     /// Head of the verification-unit instance chain for this scope.
     ///
     /// Only the first extra instance is exported; further units are linked via
@@ -271,14 +214,6 @@ pub struct Instance {
     #[serde(deserialize_with = "deserialize_optional_node_id")]
     pub uninst: Option<UninstantiatedScopeRefNodeId>,
 
-    /// True when this is a subprogram instance whose parameters are all static.
-    ///
-    /// Process instances are also marked const after `Elab_Processes`.
-    pub is_const: bool,
-
-    /// True when a fatal elaboration error aborted this instance.
-    pub is_error: bool,
-
     /// True when a subprogram has a signal formal associated by individual
     /// elements (`Get_Indiv_Signal_Assoc_Flag`).
     ///
@@ -296,27 +231,15 @@ pub struct Instance {
 
     /// True when an ancestor instance has [`has_individual_association_formals`](Self::has_individual_association_formals) set.
     ///
-    /// Propagates up the caller chain so nested waits still refresh individual
+    /// Propagates through ancestor instances so nested waits still refresh individual
     /// signal associations.
     #[serde(rename = "flag2")]
     pub has_ancestor_with_individual_association_formals: bool,
 
     /// Foreign-module binding id; `0` for ordinary VHDL.
     ///
-    /// Foreign instances typically have `max_objects == 0` and a null block
-    /// scope.
+    /// Foreign instances typically have a null block scope.
     pub foreign: i32,
-
-    /// Slot index of the last elaborated object (`Elab_Objects`).
-    ///
-    /// Used to detect out-of-order elaboration; increments as `Create_Object`
-    /// fills slots sequentially.
-    pub elab_objects: u32,
-
-    /// Total object slots allocated for this scope (`Max_Objs`).
-    ///
-    /// Comes from annotation-time `Sim_Info.Nbr_Objects`.
-    pub max_objects: u32,
 }
 
 impl Instance {
@@ -332,17 +255,12 @@ impl Instance {
             source: None,
             parent: None,
             config: None,
-            caller: None,
             extra: None,
             block: None,
             uninst: None,
-            is_const: false,
-            is_error: false,
             has_individual_association_formals: false,
             has_ancestor_with_individual_association_formals: false,
             foreign: 0,
-            elab_objects: 0,
-            max_objects: 0,
         }
     }
 }
@@ -374,15 +292,11 @@ pub enum ObjKind {
 
     /// Nested instance (component, package, generate child, process, …).
     Instance,
-
-    /// Areapool mark for for-loop iteration cleanup.
-    Marker,
 }
 
 /// One occupied slot in an instance's object table.
 ///
-/// Only slots with `obj_kind != none` are exported. Slot numbers are 1-based
-/// and must be filled in order (`slot == elab_objects + 1` at creation).
+/// Only slots with `obj_kind != none` are exported. Slot numbers are 1-based.
 ///
 /// ```vhdl
 /// architecture a of e is
@@ -470,22 +384,6 @@ pub enum ObjectSlotKind {
     /// Created for component/entity instantiations, package objects, generate
     /// children, and (after `Elab_Processes`) process sub-instances.
     Instance { target_instance: InstanceId },
-
-    /// For-loop areapool checkpoint (`Obj_Marker` / `Create_Object_Marker`).
-    ///
-    /// Restored when the loop iteration ends so temporary objects allocated
-    /// during the iteration are released.
-    ///
-    /// ```vhdl
-    /// process is
-    /// begin
-    ///   for i in 0 to 7 loop
-    ///     -- marker slot saved/restored around each iteration
-    ///     null;
-    ///   end loop;
-    /// end process;
-    /// ```
-    Marker { mark: Option<()> },
 }
 
 /// Discriminant of a [`Signal`] entry (`Signal_Kind`).
@@ -510,9 +408,6 @@ pub enum SignalKind {
 
     /// Implicit signal `S'DELAYED(T)`.
     Delayed,
-
-    /// VHDL-AMS `Q'ABOVE(E)` threshold-crossing signal.
-    Above,
 
     /// Implicit `GUARD` signal of a guarded block.
     ///
@@ -637,8 +532,8 @@ impl IdIndex for Signal {
 ///
 /// ```vhdl
 /// -- Each of these yields a process entry:
-/// y <= a and b;                    -- concurrent assignment
-/// assert en = '1';                -- concurrent assertion
+/// y <= a and b;  -- concurrent assignment
+/// assert en = '1';  -- concurrent assertion
 /// p: process (clk) begin ... end;  -- explicit process
 /// ```
 #[derive(Debug, Deserialize)]
@@ -895,143 +790,6 @@ impl IdIndex for Disconnect {
     }
 }
 
-/// VHDL-AMS quantity (`Quantity_Entry`).
-///
-/// Present only when AMS units are elaborated. Covers free quantities, branch
-/// quantities, and `'DOT` attributes (`Gather_Quantity`).
-///
-/// ```vhdl
-/// quantity v across i through p to n;  -- branch quantity
-/// quantity q : real;                   -- free quantity
-/// -- q'DOT also yields a quantity entry
-/// ```
-#[derive(Debug, Deserialize)]
-pub struct Quantity {
-    /// 1-based index into the quantities table.
-    pub id: QuantityId,
-
-    /// Quantity declaration or `'DOT` attribute.
-    #[serde(deserialize_with = "deserialize_optional_node_id")]
-    pub decl: Option<QuantityDeclNodeId>,
-
-    /// Owning instance.
-    pub instance: InstanceId,
-
-    /// Quantity subtype.
-    #[serde(rename = "type")]
-    pub typ: TypeId,
-
-    /// Value memory.
-    pub val: MemoryId,
-
-    /// Index in the scalar quantity table (`Sq_Idx`).
-    pub sq_idx: u32,
-}
-
-impl IdIndex for Quantity {
-    fn id_index(&self) -> usize {
-        self.id.index()
-    }
-}
-
-/// VHDL-AMS terminal (`Terminal_Entry`).
-///
-/// Carries the nature's across and through types plus indices into the scalar
-/// AMS tables used for reference potentials and contributions.
-///
-/// ```vhdl
-/// terminal p, n : electrical;
-/// ```
-#[derive(Debug, Deserialize)]
-pub struct Terminal {
-    /// 1-based index into the terminals table.
-    pub id: TerminalId,
-
-    /// Terminal declaration, when AMS units are present.
-    #[serde(deserialize_with = "deserialize_optional_node_id")]
-    pub decl: Option<NodeId<TerminalDeclaration>>,
-
-    /// Owning instance.
-    pub instance: InstanceId,
-
-    /// Across type of the terminal's nature.
-    pub across_type: TypeId,
-
-    /// Through type of the terminal's nature.
-    pub through_type: TypeId,
-
-    /// Reference-value memory.
-    pub ref_val: MemoryId,
-
-    /// Scalar quantity index for the reference value.
-    pub ref_idx: u32,
-
-    /// Scalar terminal index for the contribution.
-    pub term_idx: u32,
-}
-
-impl IdIndex for Terminal {
-    fn id_index(&self) -> usize {
-        self.id.index()
-    }
-}
-
-/// Simple simultaneous statement (`Simultaneous_Table` entry).
-///
-/// Always considered during AMS simulation (unlike complex if/case forms).
-///
-/// ```vhdl
-/// v == i * r;  -- simple simultaneous statement
-/// ```
-#[derive(Debug, Deserialize)]
-pub struct Simultaneous {
-    /// 1-based index into the simultaneous table.
-    pub id: SimultaneousId,
-
-    /// Simple simultaneous statement, when AMS units are present.
-    #[serde(deserialize_with = "deserialize_optional_node_id")]
-    pub stmt: Option<NodeId<SimpleSimultaneousStatement>>,
-
-    /// Owning instance.
-    pub instance: InstanceId,
-}
-
-impl IdIndex for Simultaneous {
-    fn id_index(&self) -> usize {
-        self.id.index()
-    }
-}
-
-/// Simultaneous if or case statement (`Complex_Simultaneous_Table` entry).
-///
-/// Nested simple simultaneous statements may be extracted at simulation time.
-///
-/// ```vhdl
-/// if sel use
-///   v == e1;
-/// else
-///   v == e2;
-/// end use;
-/// ```
-#[derive(Debug, Deserialize)]
-pub struct ComplexSimultaneous {
-    /// 1-based index into the complex-simultaneous table.
-    pub id: ComplexSimultaneousId,
-
-    /// Simultaneous if/case statement, when AMS units are present.
-    #[serde(deserialize_with = "deserialize_optional_node_id")]
-    pub stmt: Option<ComplexSimultaneousStmtNodeId>,
-
-    /// Owning instance.
-    pub instance: InstanceId,
-}
-
-impl IdIndex for ComplexSimultaneous {
-    fn id_index(&self) -> usize {
-        self.id.index()
-    }
-}
-
 /// Elaborated type kind (`Type_Kind` in `Elab.Vhdl_Objtypes`).
 ///
 /// Distinguishes scalar nets, bounded vs unbounded composites, and
@@ -1122,9 +880,7 @@ pub enum Wkind {
 /// [`TypeId`] values mean the same GHDL `Type_Acc`. Fields after the common
 /// header are kind-dependent (see [`type_kind`](Self::type_kind)).
 ///
-/// Common header: alignment, staticness, byte size [`sz`](Self::sz), and width
-/// [`w`](Self::w). Width may be zero for null arrays or single-value discrete
-/// subtypes (`range 0 to 0`).
+/// Common header: alignment, byte size [`sz`](Self::sz), and width [`w`](Self::w).
 #[derive(Debug, Deserialize)]
 pub struct TypeNode {
     /// Interned type id.
@@ -1139,21 +895,13 @@ pub struct TypeNode {
     /// Power-of-two byte alignment (`Palign_Type`, 0..=3 → 1/2/4/8 bytes).
     pub align: u32,
 
-    /// True if the type is not allocated on a temporary expression pool.
-    ///
-    /// Used to avoid duplicating types when unsharing.
-    pub is_global: bool,
-
-    /// True if object size is known at compile time (record layout).
-    pub is_static: bool,
-
-    /// True if bounds are static (bounds-vector size).
-    pub is_bnd_static: bool,
-
     /// Memory size in bytes.
     pub sz: i64,
 
     /// Width: nets/bits ([`Wkind::Net`]) or scalar elements ([`Wkind::Sim`]).
+    ///
+    /// May be zero for null arrays or single-value discrete subtypes
+    /// (`range 0 to 0`).
     pub w: u32,
 
     /// Left bound of a scalar or array dimension.
@@ -1283,23 +1031,11 @@ impl IdIndex for Value {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "val_kind", rename_all = "snake_case")]
 pub enum ValueKindData {
-    /// Synthesis gate output (vector or bit net id `n`).
-    Net { n: u32 },
-
-    /// Object read as a net; must be converted to [`Net`](Self::Net) for use
-    /// in a netlist context.
-    Wire { n: u32 },
-
-    /// User signal: index into the signals table plus optional initial value.
+    /// User signal: index into the signals table.
     ///
     /// During elaboration the slot is preallocated (`Signal_None`);
-    /// `Gather_Signal` fills the entry. `init` often holds a
-    /// [`Memory`](Self::Memory) initial expression.
-    Signal {
-        signal: SignalId,
-        #[serde(default, deserialize_with = "deserialize_optional_id")]
-        init: Option<ValueId>,
-    },
+    /// `Gather_Signal` fills the entry.
+    Signal { signal: SignalId },
 
     /// Raw constant or runtime data blob.
     Memory { memory: MemoryId },
@@ -1307,23 +1043,15 @@ pub enum ValueKindData {
     /// Open file object (`Ghdl_File_Index`).
     File { file: u32 },
 
-    /// AMS quantity index.
-    Quantity { quantity: QuantityId },
-
-    /// AMS terminal index.
-    Terminal { terminal: TerminalId },
-
     /// Named constant wrapping another value (`Create_Value_Const`).
     ///
-    /// Avoids creating duplicate nets for the same constant; `loc` is the
-    /// constant declaration.
+    /// `loc` is the constant declaration.
     Const {
         value: ValueId,
 
         /// Source declaration of the named constant (`Create_Value_Const`).
         #[serde(deserialize_with = "deserialize_optional_node_id")]
         loc: Option<NodeId<ConstantDeclaration>>,
-        net: u32,
     },
 
     /// Static view of another value with a compatible type (slice, field, alias).
@@ -1369,21 +1097,21 @@ pub enum ValueKindData {
     },
 }
 
-/// Interned raw memory blob (hex-encoded in JSON).
+/// Interned raw memory blob (Base64-encoded in JSON).
 ///
 /// Backing store for constant values, signal `val` / `val_init`, and similar
-/// buffers. `size` is the byte length; `data` is lowercase hex of that many
-/// bytes.
+/// buffers. `size` is the byte length; `data` is decoded from standard Base64.
 #[derive(Debug, Deserialize)]
 pub struct Memory {
     /// Interned memory id.
     pub id: MemoryId,
 
-    /// Byte length of [`data`](Self::data) when decoded.
+    /// Declared byte length of the blob.
     pub size: u32,
 
-    /// Hex-encoded contents.
-    pub data: String,
+    /// Decoded contents.
+    #[serde(deserialize_with = "deserialize_base64")]
+    pub data: Vec<u8>,
 }
 
 impl IdIndex for Memory {
@@ -1426,10 +1154,6 @@ pub struct NbrSourcesEntry {
 
     /// Final source count after collapse propagation.
     pub total: u32,
-
-    /// Last process that added a driver (dedup within one process while building).
-    #[serde(default, deserialize_with = "deserialize_optional_id")]
-    pub last_proc: Option<ProcessId>,
 }
 
 /// Dual offset into net (scalar-element) and memory (byte) layouts
@@ -1468,4 +1192,182 @@ pub struct SubSignal {
     /// Subelement type; omitted when identical to the base signal's type.
     #[serde(default, rename = "type", deserialize_with = "deserialize_optional_id")]
     pub typ: Option<TypeId>,
+}
+
+/// Deserializes a standard Base64 string into raw bytes.
+fn deserialize_base64<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let encoded = <&str>::deserialize(deserializer)?;
+    decode_base64(encoded).map_err(D::Error::custom)
+}
+
+/// Decodes standard Base64 (`A-Za-z0-9+/` with `=` padding) into bytes.
+fn decode_base64(input: &str) -> Result<Vec<u8>, &'static str> {
+    if !input.len().is_multiple_of(4) {
+        return Err("invalid base64 length");
+    }
+
+    let mut out = Vec::with_capacity(input.len() / 4 * 3);
+    for chunk in input.as_bytes().chunks_exact(4) {
+        let b0 = decode_base64_digit(chunk[0])?;
+        let b1 = decode_base64_digit(chunk[1])?;
+        out.push((b0 << 2) | (b1 >> 4));
+
+        if chunk[2] == b'=' {
+            if chunk[3] != b'=' {
+                return Err("invalid base64 padding");
+            }
+            break;
+        }
+        let b2 = decode_base64_digit(chunk[2])?;
+        out.push(((b1 & 0xf) << 4) | (b2 >> 2));
+
+        if chunk[3] == b'=' {
+            break;
+        }
+        let b3 = decode_base64_digit(chunk[3])?;
+        out.push(((b2 & 0x3) << 6) | b3);
+    }
+    Ok(out)
+}
+
+/// Maps one Base64 alphabet character to its 6-bit value.
+fn decode_base64_digit(byte: u8) -> Result<u8, &'static str> {
+    match byte {
+        b'A'..=b'Z' => Ok(byte - b'A'),
+        b'a'..=b'z' => Ok(byte - b'a' + 26),
+        b'0'..=b'9' => Ok(byte - b'0' + 52),
+        b'+' => Ok(62),
+        b'/' => Ok(63),
+        _ => Err("invalid base64 character"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Appends standard Base64 encoding of `bytes` to `buffer`.
+    fn append_base64(buffer: &mut Vec<u8>, bytes: &[u8]) {
+        const TABLE: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut chunks = bytes.chunks_exact(3);
+        for chunk in chunks.by_ref() {
+            let n = (u32::from(chunk[0]) << 16) | (u32::from(chunk[1]) << 8) | u32::from(chunk[2]);
+            buffer.push(TABLE[((n >> 18) & 0x3f) as usize]);
+            buffer.push(TABLE[((n >> 12) & 0x3f) as usize]);
+            buffer.push(TABLE[((n >> 6) & 0x3f) as usize]);
+            buffer.push(TABLE[(n & 0x3f) as usize]);
+        }
+        let rem = chunks.remainder();
+        match rem.len() {
+            1 => {
+                let n = u32::from(rem[0]) << 16;
+                buffer.push(TABLE[((n >> 18) & 0x3f) as usize]);
+                buffer.push(TABLE[((n >> 12) & 0x3f) as usize]);
+                buffer.push(b'=');
+                buffer.push(b'=');
+            },
+            2 => {
+                let n = (u32::from(rem[0]) << 16) | (u32::from(rem[1]) << 8);
+                buffer.push(TABLE[((n >> 18) & 0x3f) as usize]);
+                buffer.push(TABLE[((n >> 12) & 0x3f) as usize]);
+                buffer.push(TABLE[((n >> 6) & 0x3f) as usize]);
+                buffer.push(b'=');
+            },
+            _ => {},
+        }
+    }
+
+    fn encode_base64(bytes: &[u8]) -> String {
+        let mut buffer = Vec::new();
+        append_base64(&mut buffer, bytes);
+        String::from_utf8(buffer).expect("base64 encoding should be valid UTF-8")
+    }
+
+    /// RFC 4648 §10 test vectors.
+    const RFC4648_VECTORS: &[(&[u8], &str)] = &[
+        (b"", ""),
+        (b"f", "Zg=="),
+        (b"fo", "Zm8="),
+        (b"foo", "Zm9v"),
+        (b"foob", "Zm9vYg=="),
+        (b"fooba", "Zm9vYmE="),
+        (b"foobar", "Zm9vYmFy"),
+    ];
+
+    #[test]
+    fn encode_rfc4648_vectors() {
+        for &(plain, encoded) in RFC4648_VECTORS {
+            assert_eq!(encode_base64(plain), encoded, "encode {plain:?}");
+        }
+    }
+
+    #[test]
+    fn decode_rfc4648_vectors() {
+        for &(plain, encoded) in RFC4648_VECTORS {
+            assert_eq!(
+                decode_base64(encoded).expect("valid Base64-encoded string"),
+                plain,
+                "decode {encoded}"
+            );
+        }
+    }
+
+    #[test]
+    fn round_trip_all_byte_lengths() {
+        let mut bytes = Vec::new();
+        for len in 0..=64 {
+            bytes.resize(len, 0);
+            for (i, byte) in bytes.iter_mut().enumerate() {
+                let value = i * 37 + len;
+                *byte = value.to_le_bytes()[0];
+            }
+            let encoded = encode_base64(&bytes);
+            assert_eq!(
+                decode_base64(&encoded).expect("valid Base64-encoded string"),
+                bytes,
+                "len={len}"
+            );
+        }
+    }
+
+    #[test]
+    fn round_trip_full_alphabet_payload() {
+        let bytes: Vec<u8> = (0_u8..=255).collect();
+        let encoded = encode_base64(&bytes);
+        assert_eq!(
+            decode_base64(&encoded).expect("valid Base64-encoded string"),
+            bytes
+        );
+    }
+
+    #[test]
+    fn decode_rejects_invalid_length() {
+        assert_eq!(decode_base64("A"), Err("invalid base64 length"));
+        assert_eq!(decode_base64("AB"), Err("invalid base64 length"));
+        assert_eq!(decode_base64("ABC"), Err("invalid base64 length"));
+    }
+
+    #[test]
+    fn decode_rejects_invalid_character() {
+        assert_eq!(decode_base64("!!!!"), Err("invalid base64 character"));
+        assert_eq!(decode_base64("Zm9vYmF!"), Err("invalid base64 character"));
+    }
+
+    #[test]
+    fn decode_rejects_invalid_padding() {
+        assert_eq!(decode_base64("Zg=A"), Err("invalid base64 padding"));
+    }
+
+    #[test]
+    fn deserialize_memory_data_field() {
+        let memory: Memory =
+            serde_json::from_str(r#"{"id":1,"size":3,"data":"Zm9v"}"#).expect("valid JSON");
+        assert_eq!(memory.id.to_raw().get(), 1);
+        assert_eq!(memory.size, 3);
+        assert_eq!(memory.data, b"foo");
+    }
 }

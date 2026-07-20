@@ -30,7 +30,6 @@ pub use self::nodes::*;
 pub struct Design {
     pub ast: Ast,
     pub metadata: DesignMetadata,
-    pub elab_units: Vec<ElabUnit>,
     pub instances: Vec<Instance>,
     pub object_slots: Vec<ObjectSlot>,
     pub signals: Vec<Signal>,
@@ -39,10 +38,6 @@ pub struct Design {
     pub sensitivities: Vec<Sensitivity>,
     pub connections: Vec<Connection>,
     pub disconnects: Vec<Disconnect>,
-    pub quantities: Vec<Quantity>,
-    pub terminals: Vec<Terminal>,
-    pub simultaneous: Vec<Simultaneous>,
-    pub complex_simultaneous: Vec<ComplexSimultaneous>,
     pub types: Vec<TypeNode>,
     pub values: Vec<Value>,
     pub memories: Vec<Memory>,
@@ -76,15 +71,6 @@ impl Design {
     #[must_use]
     pub fn root_instance(&self) -> Option<InstanceId> {
         self.metadata.root_instance
-    }
-
-    /// Returns the elaborated unit for `id`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `id` is out of range for [`Self::elab_units`].
-    pub fn elab_unit(&self, id: ElabUnitId) -> StdResult<&ElabUnit, DesignNodeError> {
-        Self::get_node(&self.elab_units, id.index(), "elab_unit", id.to_raw().get())
     }
 
     /// Returns the instance for `id`.
@@ -165,55 +151,6 @@ impl Design {
         )
     }
 
-    /// Returns the quantity for `id`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `id` is out of range for [`Self::quantities`].
-    pub fn quantity(&self, id: QuantityId) -> StdResult<&Quantity, DesignNodeError> {
-        Self::get_node(&self.quantities, id.index(), "quantity", id.to_raw().get())
-    }
-
-    /// Returns the terminal for `id`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `id` is out of range for [`Self::terminals`].
-    pub fn terminal(&self, id: TerminalId) -> StdResult<&Terminal, DesignNodeError> {
-        Self::get_node(&self.terminals, id.index(), "terminal", id.to_raw().get())
-    }
-
-    /// Returns the simultaneous statement for `id`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `id` is out of range for [`Self::simultaneous`].
-    pub fn simultaneous(&self, id: SimultaneousId) -> StdResult<&Simultaneous, DesignNodeError> {
-        Self::get_node(
-            &self.simultaneous,
-            id.index(),
-            "simultaneous",
-            id.to_raw().get(),
-        )
-    }
-
-    /// Returns the complex simultaneous statement for `id`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `id` is out of range for [`Self::complex_simultaneous`].
-    pub fn complex_simultaneous(
-        &self,
-        id: ComplexSimultaneousId,
-    ) -> StdResult<&ComplexSimultaneous, DesignNodeError> {
-        Self::get_node(
-            &self.complex_simultaneous,
-            id.index(),
-            "complex_simultaneous",
-            id.to_raw().get(),
-        )
-    }
-
     /// Returns the type node for `id`.
     ///
     /// # Errors
@@ -284,7 +221,6 @@ impl Design {
         debug!("Design metadata: {metadata:#?}");
 
         let DesignCounts {
-            elab_unit,
             instance,
             signal,
             process,
@@ -292,10 +228,6 @@ impl Design {
             sensitivity,
             connection,
             disconnect,
-            quantity,
-            terminal,
-            simultaneous,
-            complex_simultaneous,
             typ,
             value,
             memory,
@@ -305,7 +237,6 @@ impl Design {
         let mut design = Design {
             ast,
             metadata,
-            elab_units: Vec::with_capacity(elab_unit as usize),
             instances: Vec::with_capacity(instance as usize),
             object_slots: Vec::new(),
             signals: Vec::with_capacity(signal as usize),
@@ -314,10 +245,6 @@ impl Design {
             sensitivities: Vec::with_capacity(sensitivity as usize),
             connections: Vec::with_capacity(connection as usize),
             disconnects: Vec::with_capacity(disconnect as usize),
-            quantities: Vec::with_capacity(quantity as usize),
-            terminals: Vec::with_capacity(terminal as usize),
-            simultaneous: Vec::with_capacity(simultaneous as usize),
-            complex_simultaneous: Vec::with_capacity(complex_simultaneous as usize),
             types: Vec::with_capacity(typ as usize),
             values: Vec::with_capacity(value as usize),
             memories: Vec::with_capacity(memory as usize),
@@ -354,7 +281,6 @@ impl Design {
     /// or if an instance ID is out of order (already past that index).
     fn add_node(&mut self, node: Node) -> Result<()> {
         match node {
-            Node::ElabUnit(node) => push_contiguous(&mut self.elab_units, node, "elab_unit"),
             Node::Instance(node) => self.add_instance(node),
             Node::ObjectSlot(node) => {
                 self.object_slots.push(node);
@@ -368,14 +294,6 @@ impl Design {
             },
             Node::Connection(node) => push_contiguous(&mut self.connections, node, "connection"),
             Node::Disconnect(node) => push_contiguous(&mut self.disconnects, node, "disconnect"),
-            Node::Quantity(node) => push_contiguous(&mut self.quantities, node, "quantity"),
-            Node::Terminal(node) => push_contiguous(&mut self.terminals, node, "terminal"),
-            Node::Simultaneous(node) => {
-                push_contiguous(&mut self.simultaneous, node, "simultaneous")
-            },
-            Node::ComplexSimultaneous(node) => {
-                push_contiguous(&mut self.complex_simultaneous, node, "complex_simultaneous")
-            },
             Node::Type(node) => push_contiguous(&mut self.types, node, "type"),
             Node::Value(node) => push_contiguous(&mut self.values, node, "value"),
             Node::Memory(node) => push_contiguous(&mut self.memories, node, "memory"),
@@ -427,7 +345,6 @@ pub struct DesignMetadata {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct DesignCounts {
-    pub elab_unit: u32,
     pub instance: u32,
     pub signal: u32,
     pub process: u32,
@@ -435,10 +352,6 @@ pub struct DesignCounts {
     pub sensitivity: u32,
     pub connection: u32,
     pub disconnect: u32,
-    pub quantity: u32,
-    pub terminal: u32,
-    pub simultaneous: u32,
-    pub complex_simultaneous: u32,
     #[serde(rename = "type")]
     pub typ: u32,
     pub value: u32,

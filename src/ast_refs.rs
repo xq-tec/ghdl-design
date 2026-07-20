@@ -87,10 +87,6 @@ ghdl_ast::subset_declaration!(DesignSlotDeclaration DesignSlotDeclarationOwned D
     ComponentInstantiationStatement(ComponentInstantiationStatement),
     SuspendStateDeclaration(SuspendStateDeclaration),
     GuardSignalDeclaration(GuardSignalDeclaration),
-    TerminalDeclaration(TerminalDeclaration),
-    FreeQuantityDeclaration(FreeQuantityDeclaration),
-    AcrossQuantityDeclaration(AcrossQuantityDeclaration),
-    ThroughQuantityDeclaration(ThroughQuantityDeclaration),
 });
 
 ghdl_ast::subset_declaration!(SignalDecl SignalDeclOwned SignalDeclNodeId {
@@ -110,7 +106,6 @@ ghdl_ast::subset_declaration!(ProcessStmt ProcessStmtOwned ProcessStmtNodeId {
     ConcurrentSelectedSignalAssignment(ConcurrentSelectedSignalAssignment),
     ConcurrentAssertionStatement(ConcurrentAssertionStatement),
     ConcurrentProcedureCallStatement(ConcurrentProcedureCallStatement),
-    ConcurrentBreakStatement(ConcurrentBreakStatement),
     /// Implicit driver process for a non-static port actual.
     AssociationElementByExpression(AssociationElementByExpression),
 });
@@ -118,19 +113,6 @@ ghdl_ast::subset_declaration!(ProcessStmt ProcessStmtOwned ProcessStmtNodeId {
 ghdl_ast::subset_declaration!(ConnectionAssociation ConnectionAssociationOwned ConnectionAssociationNodeId {
     ByName(AssociationElementByName),
     ByExpression(AssociationElementByExpression),
-});
-
-ghdl_ast::subset_declaration!(QuantityDecl QuantityDeclOwned QuantityDeclNodeId {
-    FreeQuantity(FreeQuantityDeclaration),
-    AcrossQuantity(AcrossQuantityDeclaration),
-    ThroughQuantity(ThroughQuantityDeclaration),
-    /// `'DOT` attribute (consolidated `Attribute` node).
-    Attribute(Attribute),
-});
-
-ghdl_ast::subset_declaration!(ComplexSimultaneousStmt ComplexSimultaneousStmtOwned ComplexSimultaneousStmtNodeId {
-    If(SimultaneousIfStatement),
-    Case(SimultaneousCaseStatement),
 });
 
 ghdl_ast::subset_declaration!(RecordFieldDecl RecordFieldDeclOwned RecordFieldDeclNodeId {
