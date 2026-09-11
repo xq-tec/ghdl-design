@@ -42,7 +42,7 @@ dependencies = [
 [[package]]
 name = "ghdl-ast"
 version = "0.2.0"
-source = "git+https://github.com/xq-tec/ghdl-ast.git?rev=4d1dedd0f2642395d8f7aff833fcaa425855a9ee#4d1dedd0f2642395d8f7aff833fcaa425855a9ee"
+source = "git+https://github.com/xq-tec/ghdl-ast.git?rev=5dfe9208d7dfee2e81ff9680a83ce9fd2d63a9fa#5dfe9208d7dfee2e81ff9680a83ce9fd2d63a9fa"
 dependencies = [
  "anyhow",
  "compact_str",

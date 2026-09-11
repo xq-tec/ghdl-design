@@ -10,7 +10,7 @@ rust-version = "1.91.0"
 
 [dependencies]
 anyhow = "1"
-ghdl-ast = { git = "https://github.com/xq-tec/ghdl-ast.git", rev = "4d1dedd0f2642395d8f7aff833fcaa425855a9ee" }
+ghdl-ast = { git = "https://github.com/xq-tec/ghdl-ast.git", rev = "5dfe9208d7dfee2e81ff9680a83ce9fd2d63a9fa" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
