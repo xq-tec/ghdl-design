@@ -9,6 +9,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
+name = "camino"
+version = "1.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbbad30e4b4c14a39e3cc8aed085a12a327257c316619c93581e017bc52be591"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
 name = "castaway"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -42,9 +51,10 @@ dependencies = [
 [[package]]
 name = "ghdl-ast"
 version = "0.2.0"
-source = "git+https://github.com/xq-tec/ghdl-ast.git?rev=5dfe9208d7dfee2e81ff9680a83ce9fd2d63a9fa#5dfe9208d7dfee2e81ff9680a83ce9fd2d63a9fa"
+source = "git+https://github.com/xq-tec/ghdl-ast.git?rev=9102447656f2761ecd2a7bd5c5654bdb1f82aaed#9102447656f2761ecd2a7bd5c5654bdb1f82aaed"
 dependencies = [
  "anyhow",
+ "camino",
  "compact_str",
  "rustc-hash",
  "serde",
