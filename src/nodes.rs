@@ -317,9 +317,9 @@ pub struct ObjectSlot {
 
     /// Declaration owning this slot, when found on the source declaration chain.
     ///
-    /// For `obj_kind: subprg`, export overwrites this with the associated
-    /// subprogram (`S_Decl`). Often `None` for ports, nested instances, and
-    /// implicit objects not found on the declaration chain.
+    /// For `obj_kind: subprg`, this is the bound subprogram (`S_Decl`). Often
+    /// `None` for ports, nested instances, and implicit objects not found on
+    /// the declaration chain.
     #[serde(deserialize_with = "deserialize_optional_node_id")]
     pub decl: Option<DesignSlotDeclarationNodeId>,
 
@@ -383,7 +383,10 @@ pub enum ObjectSlotKind {
     ///
     /// Created for component/entity instantiations, package objects, generate
     /// children, and (after `Elab_Processes`) process sub-instances.
-    Instance { target_instance: InstanceId },
+    Instance {
+        #[serde(default, deserialize_with = "deserialize_optional_id")]
+        target_instance: Option<InstanceId>,
+    },
 }
 
 /// Discriminant of a [`Signal`] entry (`Signal_Kind`).
@@ -1369,5 +1372,52 @@ mod tests {
         assert_eq!(memory.id.to_raw().get(), 1);
         assert_eq!(memory.size, 3);
         assert_eq!(memory.data, b"foo");
+    }
+
+    #[test]
+    fn object_slot_reads_decl_and_allows_null_instance() {
+        use ghdl_ast::AstNodeId;
+
+        let object: Node = serde_json::from_str(
+            r#"{"object_slot":{"instance":1,"slot":1,"decl":10,"obj_kind":"object","type":2,"value":3}}"#,
+        )
+        .expect("object slot");
+        assert!(matches!(
+            &object,
+            Node::ObjectSlot(slot)
+                if slot.decl.as_ref().is_some_and(|decl| decl.id_primitive().get() == 10)
+                    && matches!(
+                        slot.kind,
+                        ObjectSlotKind::Object { typ, value }
+                            if typ.to_raw().get() == 2 && value.to_raw().get() == 3
+                    )
+        ));
+
+        let subprg: Node = serde_json::from_str(
+            r#"{"object_slot":{"instance":2,"slot":2,"decl":560,"obj_kind":"subprg"}}"#,
+        )
+        .expect("subprogram slot");
+        assert!(matches!(
+            &subprg,
+            Node::ObjectSlot(slot)
+                if slot.decl.as_ref().is_some_and(|decl| decl.id_primitive().get() == 560)
+                    && matches!(slot.kind, ObjectSlotKind::Subprg)
+        ));
+
+        let instance: Node = serde_json::from_str(
+            r#"{"object_slot":{"instance":5,"slot":3,"decl":0,"obj_kind":"instance","target_instance":0}}"#,
+        )
+        .expect("instance slot");
+        assert!(matches!(
+            &instance,
+            Node::ObjectSlot(slot)
+                if slot.decl.is_none()
+                    && matches!(
+                        slot.kind,
+                        ObjectSlotKind::Instance {
+                            target_instance: None
+                        }
+                    )
+        ));
     }
 }
