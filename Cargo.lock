@@ -51,7 +51,7 @@ dependencies = [
 [[package]]
 name = "ghdl-ast"
 version = "0.2.0"
-source = "git+https://github.com/xq-tec/ghdl-ast.git?rev=dd3db0c76cd0f68e23920e2b4d7ab3471a9341d4#dd3db0c76cd0f68e23920e2b4d7ab3471a9341d4"
+source = "git+https://github.com/xq-tec/ghdl-ast.git?rev=718fcee493c26fa01983c9bee1a873dc193069d1#718fcee493c26fa01983c9bee1a873dc193069d1"
 dependencies = [
  "anyhow",
  "camino",
