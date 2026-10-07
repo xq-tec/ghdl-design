@@ -29,6 +29,8 @@ ghdl_ast::subset_declaration!(InstanceSource InstanceSourceOwned InstanceSourceN
     SensitizedProcess(SensitizedProcessStatement),
     FunctionBody(FunctionBody),
     ProcedureBody(ProcedureBody),
+    /// Body of the protected type of a protected object instance.
+    ProtectedTypeBody(ProtectedTypeBody),
 });
 
 ghdl_ast::subset_declaration!(InstanceConfiguration InstanceConfigurationOwned InstanceConfigurationNodeId {
@@ -54,6 +56,8 @@ ghdl_ast::subset_declaration!(InstanceBlockRef InstanceBlockRefOwned InstanceBlo
     FunctionDeclaration(FunctionDeclaration),
     ProcedureDeclaration(ProcedureDeclaration),
     ForeignModule(ForeignModule),
+    /// Declaration of the protected type of a protected object instance.
+    ProtectedTypeDeclaration(ProtectedTypeDeclaration),
 });
 
 ghdl_ast::subset_declaration!(UninstantiatedScopeRef UninstantiatedScopeRefOwned UninstantiatedScopeRefNodeId {

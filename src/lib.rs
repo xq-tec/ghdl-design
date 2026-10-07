@@ -19,6 +19,7 @@ use anyhow::Result;
 use anyhow::bail;
 use ghdl_ast::Ast;
 use ghdl_ast::AstLoadingOutput;
+use ghdl_ast::AstNodeId as _;
 use serde::Deserialize;
 use tracing::debug;
 
@@ -190,6 +191,19 @@ impl Design {
             "nbr_sources",
             id.to_raw().get(),
         )
+    }
+
+    /// Returns whether `id` is the instance of a protected object.
+    ///
+    /// Such an instance's `source` is a protected type body. Unknown IDs are
+    /// not protected objects.
+    #[must_use]
+    pub fn is_protected_object(&self, id: InstanceId) -> bool {
+        self.instance(id)
+            .ok()
+            .and_then(|instance| instance.source)
+            .and_then(|source| source.try_get(&self.ast).ok())
+            .is_some_and(|source| matches!(source, InstanceSource::ProtectedTypeBody(_)))
     }
 
     /// Looks up `index` in `table`, mapping out-of-range IDs to [`DesignNodeError`].

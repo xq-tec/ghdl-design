@@ -147,6 +147,16 @@ pub trait IdIndex {
 ///   u: entity work.child port map (...); -- stmt=u, source=child's architecture
 /// end;
 /// ```
+///
+/// # Protected objects
+///
+/// Every object of a protected type is an instance of its own
+/// ([`Design::is_protected_object`]): `stmt` is the variable declaration,
+/// `source` the protected type body, and `block` the protected type
+/// declaration. `parent` is the instance that declares the **type**, not the
+/// one that declares the variable. Its slots hold the body's variables,
+/// constants, files, and subtypes. [`ObjectSlot::protected`] links a variable
+/// slot to its object instance.
 #[derive(Debug, Deserialize)]
 pub struct Instance {
     /// Unique instance index (`Instance_Id_Type`, starts at 1).
@@ -322,6 +332,19 @@ pub struct ObjectSlot {
     /// the declaration chain.
     #[serde(deserialize_with = "deserialize_optional_node_id")]
     pub decl: Option<DesignSlotDeclarationNodeId>,
+
+    /// Protected object instance held by an object of a protected type.
+    ///
+    /// Set for shared variables, process variables, variables declared in a
+    /// protected type body, and external variable names whose slot value
+    /// aliases such an object. The object's variables are the object slots of
+    /// that instance. `None` for every other slot.
+    ///
+    /// ```vhdl
+    /// shared variable sv : counter_t;  -- slot with protected → object instance
+    /// ```
+    #[serde(default, deserialize_with = "deserialize_optional_id")]
+    pub protected: Option<InstanceId>,
 
     /// Runtime contents of the slot.
     #[serde(flatten)]
@@ -1392,6 +1415,22 @@ mod tests {
                             if typ.to_raw().get() == 2 && value.to_raw().get() == 3
                     )
         ));
+
+        let protected: Node = serde_json::from_str(
+            r#"{"object_slot":{"instance":1,"slot":2,"decl":11,"obj_kind":"object","type":4,"value":5,"protected":7}}"#,
+        )
+        .expect("protected object slot");
+        assert!(matches!(
+            &protected,
+            Node::ObjectSlot(slot)
+                if slot.protected.is_some_and(|id| id.to_raw().get() == 7)
+                    && matches!(
+                        slot.kind,
+                        ObjectSlotKind::Object { typ, value }
+                            if typ.to_raw().get() == 4 && value.to_raw().get() == 5
+                    )
+        ));
+        assert!(matches!(&object, Node::ObjectSlot(slot) if slot.protected.is_none()));
 
         let subprg: Node = serde_json::from_str(
             r#"{"object_slot":{"instance":2,"slot":2,"decl":560,"obj_kind":"subprg"}}"#,
