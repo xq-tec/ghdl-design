@@ -87,6 +87,15 @@ ghdl_ast::subset_declaration!(DesignSlotDeclaration DesignSlotDeclarationOwned D
     ComponentInstantiationStatement(ComponentInstantiationStatement),
     SuspendStateDeclaration(SuspendStateDeclaration),
     GuardSignalDeclaration(GuardSignalDeclaration),
+    /// External name that is not the name of an alias, held by the attribute implicit declaration
+    /// of the enclosing declarative region. Its slot value is an alias of the target object.
+    ExternalConstantName(ExternalConstantName),
+    /// External name that is not the name of an alias, held by the attribute implicit declaration
+    /// of the enclosing declarative region. Its slot value is an alias of the target object.
+    ExternalSignalName(ExternalSignalName),
+    /// External name that is not the name of an alias, held by the attribute implicit declaration
+    /// of the enclosing declarative region. Its slot value is an alias of the target object.
+    ExternalVariableName(ExternalVariableName),
 });
 
 ghdl_ast::subset_declaration!(SignalDecl SignalDeclOwned SignalDeclNodeId {
